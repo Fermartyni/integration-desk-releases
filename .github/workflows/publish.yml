@@ -1,0 +1,44 @@
+name: Publicar entrega firmada
+on:
+  push:
+    branches: ["incoming/v*"]
+permissions:
+  contents: read
+concurrency:
+  group: integration-desk-release-channel
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verificar la firma de los archivos entregados
+        run: |
+          openssl pkeyutl -verify -rawin -pubin -inkey update-public.pem -in delivery/kit.tar -sigfile delivery/kit.tar.sig
+          tar --no-same-owner --no-same-permissions -xf delivery/kit.tar -- \
+            releases/integration-desk-{app.json.gz,manifest.json} runtime/{launcher,updater}.mjs \
+            scripts/{installer,node-runtime,publish-release}.mjs scripts/release-channel.json docs/RELEASE-NOTES.md
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.3
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - id: version
+        run: |
+          echo "value=${GITHUB_REF_NAME#incoming/v}" >> "$GITHUB_OUTPUT"
+          npm --ignore-scripts version "${GITHUB_REF_NAME#incoming/v}" --no-git-tag-version --allow-same-version
+          node assemble.mjs
+      - run: node scripts/publish-release.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+  smoke:
+    needs: publish
+    uses: ./.github/workflows/verify-downloads.yml
+    with:
+      tag: ${{ format('v{0}', needs.publish.outputs.version) }}
