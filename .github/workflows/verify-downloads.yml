@@ -1,0 +1,45 @@
+name: Verificar instaladores públicos
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Versión publicada (vX.Y.Z)
+        required: true
+permissions:
+  contents: read
+jobs:
+  start:
+    name: Arranque en ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-2025, target: windows-x64}
+          - {os: windows-11-arm, target: windows-arm64}
+          - {os: macos-15-intel, target: macos-x64}
+          - {os: macos-15, target: macos-arm64}
+          - {os: ubuntu-24.04, target: linux-x64}
+          - {os: ubuntu-24.04-arm, target: linux-arm64}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Descargar el ZIP público sin credenciales
+        shell: bash
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          curl --fail --location --retry 3 --output desk.zip "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/Integration-Desk-${TAG#v}-$TARGET.zip"
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: Expand-Archive -Path desk.zip -DestinationPath .
+      - if: runner.os != 'Windows'
+        run: unzip -q desk.zip
+      - name: Probar arranque, interfaz y sesión local
+        run: node verify-download.mjs
