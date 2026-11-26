@@ -18,7 +18,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: main
           persist-credentials: false
+      - name: Obtener la entrega exacta desde el commit del evento
+        run: |
+          mkdir delivery
+          for file in kit.tar kit.tar.sig; do
+            git_url="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$GITHUB_SHA/delivery/$file"
+            curl -fsSL --retry 3 "$git_url" -o "delivery/$file"
+          done
       - name: Verificar la firma de los archivos entregados
         run: |
           openssl pkeyutl -verify -rawin -pubin -inkey update-public.pem -in delivery/kit.tar -sigfile delivery/kit.tar.sig
